@@ -1,0 +1,5 @@
+{
+  "name": "DOCTRACK",
+  "description": "Document expiry monitoring web app with a maritime/industrial dashboard.",
+  "requestFramePermissions": []
+}
