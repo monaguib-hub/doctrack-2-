@@ -8,6 +8,7 @@ import {
   Anchor,
   Edit2,
   Download,
+  Paperclip,
   FileText,
   Shield,
   User,
@@ -27,7 +28,7 @@ import { EmployeeList } from './components/EmployeeList';
 import { OfficeManagement } from './components/OfficeManagement';
 import { ActivityEntry } from './components/ActivityLog';
 import { useToast } from './components/Toast';
-import { ViewDocumentModal, EditDocumentModal, DeleteConfirmationModal, GlobalAssignDocumentModal, ChangePasswordModal } from './components/Modals';
+import { EditDocumentModal, DeleteConfirmationModal, GlobalAssignDocumentModal, ChangePasswordModal } from './components/Modals';
 import { CommandPalette } from './components/CommandPalette';
 import { SidePanel, DetailItem, SectionHeader } from './components/SidePanel';
 import { AuthPage } from './components/AuthPage';
@@ -54,7 +55,7 @@ export default function App() {
   const dataLoadedRef = React.useRef<string | null>(null);
 
   // Global Modal States
-  const [viewDoc, setViewDoc] = useState<Document | null>(null);
+
   const [editDoc, setEditDoc] = useState<Document | null>(null);
   const [deleteDoc, setDeleteDoc] = useState<Document | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -371,7 +372,7 @@ export default function App() {
             documents={documents}
             activities={activities}
             currentUser={currentUser}
-            onViewDocument={setViewDoc}
+            onViewDocument={(doc) => setSelectedInsight({ type: 'document', data: doc })}
             onEditDocument={(doc) => setEditDoc(doc)}
             onDeleteDocument={(doc) => setDeleteDoc(doc)}
             onOpenAssignModal={() => setIsAssignModalOpen(true)}
@@ -406,7 +407,7 @@ export default function App() {
             onAddEmployee={handleAddEmployee}
             onEditEmployee={handleEditEmployee}
             onDeleteEmployee={handleDeleteEmployee}
-            onViewDocument={setViewDoc}
+            onViewDocument={(doc) => setSelectedInsight({ type: 'document', data: doc })}
             initialSelectedName={navigateToEmployee}
             onInitialSelectionConsumed={() => setNavigateToEmployee(null)}
           />
@@ -495,9 +496,21 @@ export default function App() {
           footer={
             selectedInsight?.type === 'document' ? (
               <div className="flex space-x-3">
-                <button className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 active:scale-95">
-                  <Download size={16} className="mr-2" />Download
-                </button>
+                {selectedInsight.data.hasAttachment && selectedInsight.data.attachmentUrl ? (
+                  <a
+                    href={selectedInsight.data.attachmentUrl}
+                    download={selectedInsight.data.attachmentName || 'attachment'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+                  >
+                    <Download size={16} className="mr-2" />Download
+                  </a>
+                ) : (
+                  <button disabled className="flex-1 py-3 bg-slate-200 text-slate-400 rounded-xl font-bold flex items-center justify-center cursor-not-allowed">
+                    <Paperclip size={16} className="mr-2" />No Attachment
+                  </button>
+                )}
                 <button
                   onClick={() => { setEditDoc(selectedInsight.data); setSelectedInsight(null); }}
                   className="px-4 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95"
@@ -525,6 +538,10 @@ export default function App() {
                   colorClass={getExpiryDetails(selectedInsight.data.expiryDate).status === 'Expired' ? 'text-red-500' : 'text-emerald-500'}
                 />
                 <DetailItem icon={Clock} label="Days Remaining" value={getExpiryDetails(selectedInsight.data.expiryDate).daysRemaining?.toString() || 'N/A'} />
+              </div>
+              <SectionHeader title="Attachment" />
+              <div className="space-y-4">
+                <DetailItem icon={Paperclip} label="Attachment" value={selectedInsight.data.hasAttachment ? (selectedInsight.data.attachmentName || 'Attached') : 'No attachment'} />
               </div>
             </div>
           )}
