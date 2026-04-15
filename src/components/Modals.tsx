@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, FolderPlus, FilePlus, Edit3, AlertTriangle, UserPlus, UserCircle, Eye, Download, FileText, Building2, Search, Plus, AlertCircle, CheckCircle2, Info, Key } from 'lucide-react';
+import { X, FolderPlus, FilePlus, Edit3, AlertTriangle, UserPlus, UserCircle, Eye, Download, FileText, Building2, Search, Plus, AlertCircle, CheckCircle2, Info, Key, Upload, XCircle } from 'lucide-react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -72,6 +72,132 @@ function BaseModal({ isOpen, onClose, title, icon, children, onSave, saveLabel =
         </div>
       )}
     </AnimatePresence>
+  );
+}
+
+const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+const ACCEPTED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png';
+
+function FileDropZone({
+  file,
+  onFileChange,
+  inputId,
+  label = 'Attach Document (PDF/JPG)'
+}: {
+  file: File | null;
+  onFileChange: (file: File | null) => void;
+  inputId: string;
+  label?: string;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = React.useRef(0);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items?.length) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile && ACCEPTED_TYPES.includes(droppedFile.type)) {
+      onFileChange(droppedFile);
+    }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          type="file"
+          accept={ACCEPTED_EXTENSIONS}
+          onChange={(e) => onFileChange(e.target.files?.[0] || null)}
+          className="hidden"
+          id={inputId}
+        />
+
+        {file ? (
+          /* ── File selected state ── */
+          <div className="flex items-center w-full px-4 py-3.5 border-2 border-blue-200 rounded-2xl bg-blue-50/40 transition-all">
+            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 mr-3">
+              <FileText className="h-5 w-5 text-blue-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
+              <p className="text-[10px] text-slate-400">{formatSize(file.size)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); onFileChange(null); }}
+              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all shrink-0 ml-2"
+              title="Remove file"
+            >
+              <XCircle size={18} />
+            </button>
+          </div>
+        ) : (
+          /* ── Drop zone / click-to-browse state ── */
+          <label
+            htmlFor={inputId}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={`flex items-center justify-center w-full px-6 py-8 border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-200 group ${
+              isDragging
+                ? 'border-blue-500 bg-blue-50/60 scale-[1.01] shadow-lg shadow-blue-500/10'
+                : 'border-slate-200 bg-slate-50/50 hover:border-blue-300 hover:bg-blue-50/30'
+            }`}
+          >
+            <div className="text-center pointer-events-none">
+              <div className={`w-12 h-12 rounded-xl shadow-sm border flex items-center justify-center mx-auto mb-3 transition-all duration-200 ${
+                isDragging
+                  ? 'bg-blue-100 border-blue-200 scale-110'
+                  : 'bg-white border-slate-100 group-hover:scale-110'
+              }`}>
+                <Upload className={`h-6 w-6 transition-colors duration-200 ${
+                  isDragging ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-600'
+                }`} />
+              </div>
+              <p className={`text-xs font-bold mb-1 transition-colors duration-200 ${
+                isDragging ? 'text-blue-700' : 'text-slate-600'
+              }`}>
+                {isDragging ? 'Drop file here' : 'Drag & drop or click to browse'}
+              </p>
+              <p className="text-[10px] text-slate-400">
+                PDF, JPG or PNG up to 10MB
+              </p>
+            </div>
+          </label>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -415,35 +541,11 @@ export function AssignDocumentModal({
           <label htmlFor="noExpiry" className="text-sm text-slate-500 font-medium cursor-pointer">Document has no expiry date</label>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Attach Document (PDF/JPG)
-          </label>
-          <div className="relative">
-            <input
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="hidden"
-              id="file-upload"
-            />
-            <label
-              htmlFor="file-upload"
-              className="flex items-center justify-center w-full px-6 py-8 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-all group bg-slate-50/50"
-            >
-              <div className="text-center">
-                <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                  <FilePlus className="h-6 w-6 text-slate-400 group-hover:text-blue-600" />
-                </div>
-                <p className="text-xs font-bold text-slate-600 mb-1">
-                  {file ? file.name : 'Choose file to upload'}
-                </p>
-                <p className="text-[10px] text-slate-400">
-                  PDF, JPG or PNG up to 10MB
-                </p>
-              </div>
-            </label>
-          </div>
-        </div>
+        <FileDropZone
+          file={file}
+          onFileChange={setFile}
+          inputId="file-upload"
+        />
       </div>
     </BaseModal>
   );
@@ -612,35 +714,11 @@ export function GlobalAssignDocumentModal({
           <label htmlFor="noExpiryGlobal" className="text-sm text-slate-500 font-medium cursor-pointer">Document has no expiry date</label>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Attach Document (PDF/JPG)
-          </label>
-          <div className="relative">
-            <input
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="hidden"
-              id="file-upload-global"
-            />
-            <label
-              htmlFor="file-upload-global"
-              className="flex items-center justify-center w-full px-6 py-8 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-all group bg-slate-50/50"
-            >
-              <div className="text-center">
-                <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                  <FilePlus className="h-6 w-6 text-slate-400 group-hover:text-blue-600" />
-                </div>
-                <p className="text-xs font-bold text-slate-600 mb-1">
-                  {file ? file.name : 'Choose file to upload'}
-                </p>
-                <p className="text-[10px] text-slate-400">
-                  PDF, JPG or PNG up to 10MB
-                </p>
-              </div>
-            </label>
-          </div>
-        </div>
+        <FileDropZone
+          file={file}
+          onFileChange={setFile}
+          inputId="file-upload-global"
+        />
       </div>
     </BaseModal>
   );
@@ -735,35 +813,12 @@ export function EditDocumentModal({
           <label htmlFor="noExpiryEdit" className="text-sm text-slate-500 font-medium cursor-pointer">Document has no expiry date</label>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Update Attachment (PDF/JPG)
-          </label>
-          <div className="relative">
-            <input
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="hidden"
-              id="file-upload-edit"
-            />
-            <label
-              htmlFor="file-upload-edit"
-              className="flex items-center justify-center w-full px-6 py-8 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-all group bg-slate-50/50"
-            >
-              <div className="text-center">
-                <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                  <FilePlus className="h-6 w-6 text-slate-400 group-hover:text-blue-600" />
-                </div>
-                <p className="text-xs font-bold text-slate-600 mb-1">
-                  {file ? file.name : 'Choose new file to update'}
-                </p>
-                <p className="text-[10px] text-slate-400">
-                  PDF, JPG or PNG up to 10MB
-                </p>
-              </div>
-            </label>
-          </div>
-        </div>
+        <FileDropZone
+          file={file}
+          onFileChange={setFile}
+          inputId="file-upload-edit"
+          label="Update Attachment (PDF/JPG)"
+        />
       </div>
     </BaseModal>
   );
