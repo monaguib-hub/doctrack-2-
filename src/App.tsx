@@ -273,13 +273,33 @@ export default function App() {
   }
 
   // Data loading
-  if (dataLoading || !currentUser) {
+  if (dataLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-100">
-        <div className="text-center">
-          <Anchor className="w-8 h-8 text-abs-navy mx-auto mb-3 animate-pulse" />
-          <p className="text-slate-500 text-sm font-bold uppercase tracking-widest">Loading your data...</p>
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+        <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-8"></div>
+        <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Loading DocTrack</h2>
+        <p className="text-slate-400 font-medium">Securing your session and fetching encrypted records...</p>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-center">
+        <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-8 border border-red-500/20">
+          <AlertTriangle size={40} className="text-red-500" />
         </div>
+        <h2 className="text-2xl font-bold text-white mb-2">Account Not Found</h2>
+        <p className="text-slate-400 max-w-md mb-8">
+          Your email ({session?.user.email}) is not registered in the DocTrack employee directory. 
+          Please contact an administrator to grant you access.
+        </p>
+        <button 
+          onClick={() => supabase.auth.signOut()}
+          className="px-8 py-3 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-colors"
+        >
+          Sign Out
+        </button>
       </div>
     );
   }
