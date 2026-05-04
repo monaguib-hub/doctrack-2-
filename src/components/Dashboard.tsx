@@ -28,7 +28,7 @@ export function Dashboard({
   onDeleteDocument: (doc: Document) => void,
   onOpenAssignModal: () => void
 }) {
-  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set(['Expired', 'Expiring < 30d', 'Expiring < 60d']));
   const [filterOpen, setFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
 

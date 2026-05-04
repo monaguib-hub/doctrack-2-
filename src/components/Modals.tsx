@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, FolderPlus, FilePlus, Edit3, AlertTriangle, UserPlus, UserCircle, Eye, Download, FileText, Building2, Search, Plus, AlertCircle, CheckCircle2, Info, Key, Upload, XCircle } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useToast } from './Toast';
 
 interface ModalProps {
   isOpen: boolean;
@@ -11,12 +13,13 @@ interface ModalProps {
   onSave: () => void;
   saveLabel?: string;
   variant?: 'primary' | 'danger';
+  isSaving?: boolean;
 }
 
-function BaseModal({ isOpen, onClose, title, icon, children, onSave, saveLabel = 'Save', variant = 'primary' }: ModalProps) {
+function BaseModal({ isOpen, onClose, title, icon, children, onSave, saveLabel = 'Save', variant = 'primary', isSaving = false }: ModalProps) {
   const saveButtonClass = variant === 'danger'
-    ? "px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-lg transition-all shadow-md shadow-red-500/10 active:scale-95"
-    : "px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-all shadow-md shadow-blue-500/10 active:scale-95";
+    ? "px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-lg transition-all shadow-md shadow-red-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+    : "px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-all shadow-md shadow-blue-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
     <AnimatePresence>
@@ -63,9 +66,10 @@ function BaseModal({ isOpen, onClose, title, icon, children, onSave, saveLabel =
               </button>
               <button
                 onClick={onSave}
+                disabled={isSaving}
                 className={saveButtonClass}
               >
-                {saveLabel}
+                {isSaving ? 'Processing...' : saveLabel}
               </button>
             </div>
           </motion.div>
@@ -429,6 +433,7 @@ export function AssignDocumentModal({
   const [expiryDate, setExpiryDate] = useState('');
   const [noExpiry, setNoExpiry] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const sortedCategories = useMemo(() => {
     return [...categories]
@@ -439,24 +444,38 @@ export function AssignDocumentModal({
       }));
   }, [categories]);
 
-  const handleSave = () => {
+  const { showToast } = useToast();
+
+  const handleSave = async () => {
+    if (!expiryDate && !noExpiry) {
+      showToast('Please select an expiry date or mark as no expiry.', 'error');
+      return;
+    }
+
     if (selectedTemplate) {
       const category = categories.find(cat => cat.documents.includes(selectedTemplate));
 
       if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          onSave({
-            title: selectedTemplate,
-            type: category?.name || 'Other',
-            expiryDate: noExpiry ? 'No Expiry' : expiryDate,
-            hasAttachment: true,
-            attachmentName: file.name,
-            attachmentUrl: reader.result as string
-          });
-          resetAndClose();
-        };
-        reader.readAsDataURL(file);
+        setIsUploading(true);
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+        const { error } = await supabase.storage.from('attachments').upload(fileName, file);
+        setIsUploading(false);
+        if (error) {
+          console.error('Upload Error:', error);
+          return;
+        }
+        const { data: publicUrlData } = supabase.storage.from('attachments').getPublicUrl(fileName);
+
+        onSave({
+          title: selectedTemplate,
+          type: category?.name || 'Other',
+          expiryDate: noExpiry ? 'No Expiry' : expiryDate,
+          hasAttachment: true,
+          attachmentName: file.name,
+          attachmentUrl: publicUrlData.publicUrl
+        });
+        resetAndClose();
       } else {
         onSave({
           title: selectedTemplate,
@@ -474,6 +493,7 @@ export function AssignDocumentModal({
     setSelectedTemplate('');
     setExpiryDate('');
     setNoExpiry(false);
+    setIsUploading(false);
     onClose();
   };
 
@@ -485,6 +505,7 @@ export function AssignDocumentModal({
       icon={<FilePlus size={20} />}
       onSave={handleSave}
       saveLabel={isOffice ? "Add to Office" : "Assign to Employee"}
+      isSaving={isUploading}
     >
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl mb-6">
@@ -571,6 +592,7 @@ export function GlobalAssignDocumentModal({
   const [expiryDate, setExpiryDate] = useState('');
   const [noExpiry, setNoExpiry] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Build sorted lists for the dropdown
   const sortedEmployees = useMemo(() =>
@@ -578,7 +600,14 @@ export function GlobalAssignDocumentModal({
   const sortedOffices = useMemo(() =>
     [...offices].sort((a, b) => a.name.localeCompare(b.name)), [offices]);
 
-  const handleSave = () => {
+  const { showToast } = useToast();
+
+  const handleSave = async () => {
+    if (!expiryDate && !noExpiry) {
+      showToast('Please select an expiry date or mark as no expiry.', 'error');
+      return;
+    }
+
     if (selectedTemplate && selectedHolder) {
       const category = categories.find(cat => cat.documents.includes(selectedTemplate));
 
@@ -597,11 +626,17 @@ export function GlobalAssignDocumentModal({
       };
 
       if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          finalize({ name: file.name, url: reader.result as string });
-        };
-        reader.readAsDataURL(file);
+        setIsUploading(true);
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+        const { error } = await supabase.storage.from('attachments').upload(fileName, file);
+        setIsUploading(false);
+        if (error) {
+          console.error('Upload Error:', error);
+          return;
+        }
+        const { data: publicUrlData } = supabase.storage.from('attachments').getPublicUrl(fileName);
+        finalize({ name: file.name, url: publicUrlData.publicUrl });
       } else {
         finalize();
       }
@@ -614,6 +649,7 @@ export function GlobalAssignDocumentModal({
     setSelectedHolder(null);
     setExpiryDate('');
     setNoExpiry(false);
+    setIsUploading(false);
     onClose();
   };
 
@@ -638,6 +674,7 @@ export function GlobalAssignDocumentModal({
       icon={<FilePlus size={20} />}
       onSave={handleSave}
       saveLabel="Create & Assign"
+      isSaving={isUploading}
     >
       <div className="space-y-4">
         {/* Holder Selection — Dropdown */}
@@ -738,6 +775,7 @@ export function EditDocumentModal({
   const [expiryDate, setExpiryDate] = useState(document?.expiryDate === 'No Expiry' ? '' : document?.expiryDate || '');
   const [noExpiry, setNoExpiry] = useState(document?.expiryDate === 'No Expiry');
   const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   React.useEffect(() => {
     if (document) {
@@ -747,19 +785,33 @@ export function EditDocumentModal({
     }
   }, [document]);
 
-  const handleSave = () => {
+  const { showToast } = useToast();
+
+  const handleSave = async () => {
+    if (!expiryDate && !noExpiry) {
+      showToast('Please select an expiry date or mark as no expiry.', 'error');
+      return;
+    }
+
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onSave({
-          expiryDate: noExpiry ? 'No Expiry' : expiryDate,
-          hasAttachment: true,
-          attachmentName: file.name,
-          attachmentUrl: reader.result as string
-        });
-        onClose();
-      };
-      reader.readAsDataURL(file);
+      setIsUploading(true);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+      const { error } = await supabase.storage.from('attachments').upload(fileName, file);
+      setIsUploading(false);
+      if (error) {
+        console.error('Upload error:', error);
+        return;
+      }
+      const { data: publicUrlData } = supabase.storage.from('attachments').getPublicUrl(fileName);
+
+      onSave({
+        expiryDate: noExpiry ? 'No Expiry' : expiryDate,
+        hasAttachment: true,
+        attachmentName: file.name,
+        attachmentUrl: publicUrlData.publicUrl
+      });
+      onClose();
     } else {
       onSave({
         expiryDate: noExpiry ? 'No Expiry' : expiryDate,
@@ -779,6 +831,7 @@ export function EditDocumentModal({
       icon={<Edit3 size={20} />}
       onSave={handleSave}
       saveLabel="Update Document"
+      isSaving={isUploading}
     >
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl mb-6">
@@ -1288,7 +1341,7 @@ export function ViewDocumentModal({
                 <div className="flex flex-col items-center justify-center h-full min-h-[500px] border-2 border-dashed border-slate-200 rounded-2xl bg-white shadow-sm p-8 text-center">
                   {document.attachmentUrl ? (
                     <div className="w-full h-full flex flex-col items-center">
-                      {document.attachmentUrl.startsWith('data:image/') ? (
+                      {(document.attachmentUrl.startsWith('data:image/') || /\.(jpeg|jpg|gif|png)(\?.*)?$/i.test(document.attachmentUrl)) ? (
                         <img
                           src={document.attachmentUrl}
                           alt={document.attachmentName}
