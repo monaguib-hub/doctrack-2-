@@ -61,7 +61,30 @@ export default function App() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [selectedInsight, setSelectedInsight] = useState<{ type: 'document' | 'employee', data: any } | null>(null);
+  const [signedInsightUrl, setSignedInsightUrl] = useState<string | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+
+  // Fetch signed URL for SidePanel insights
+  useEffect(() => {
+    const fetchSignedUrl = async () => {
+      if (selectedInsight?.type === 'document' && selectedInsight.data.hasAttachment && selectedInsight.data.attachmentUrl) {
+        try {
+          const { data, error } = await supabase.storage
+            .from('attachments')
+            .createSignedUrl(selectedInsight.data.attachmentUrl, 3600);
+          
+          if (error) throw error;
+          setSignedInsightUrl(data.signedUrl);
+        } catch (err) {
+          console.error('Failed to generate secure insight link:', err);
+          setSignedInsightUrl(null);
+        }
+      } else {
+        setSignedInsightUrl(null);
+      }
+    };
+    fetchSignedUrl();
+  }, [selectedInsight]);
 
   // Command palette navigation — pass to child components so they pre-select
   const [navigateToEmployee, setNavigateToEmployee] = useState<string | null>(null);
@@ -515,17 +538,34 @@ export default function App() {
           subtitle={selectedInsight?.type === 'document' ? 'Document Detail' : 'Personnel Insight'}
           footer={
             selectedInsight?.type === 'document' ? (
-              <div className="flex space-x-3">
+              <div className="flex space-x-3 w-full">
                 {selectedInsight.data.hasAttachment && selectedInsight.data.attachmentUrl ? (
-                  <a
-                    href={selectedInsight.data.attachmentUrl}
-                    download={selectedInsight.data.attachmentName || 'attachment'}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={async () => {
+                      if (!signedInsightUrl) {
+                        showToast('Secure link not ready', 'error');
+                        return;
+                      }
+                      try {
+                        const response = await fetch(signedInsightUrl);
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = selectedInsight.data.attachmentName || 'attachment';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
+                      } catch (err) {
+                        console.error('Download failed:', err);
+                        window.open(signedInsightUrl, '_blank');
+                      }
+                    }}
                     className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 active:scale-95"
                   >
                     <Download size={16} className="mr-2" />Download
-                  </a>
+                  </button>
                 ) : (
                   <button disabled className="flex-1 py-3 bg-slate-200 text-slate-400 rounded-xl font-bold flex items-center justify-center cursor-not-allowed">
                     <Paperclip size={16} className="mr-2" />No Attachment
@@ -562,6 +602,32 @@ export default function App() {
               <SectionHeader title="Attachment" />
               <div className="space-y-4">
                 <DetailItem icon={Paperclip} label="Attachment" value={selectedInsight.data.hasAttachment ? (selectedInsight.data.attachmentName || 'Attached') : 'No attachment'} />
+                
+                {selectedInsight.data.hasAttachment && selectedInsight.data.attachmentUrl && (
+                  <div className="mt-4 p-4 bg-white border border-slate-100 rounded-2xl flex flex-col items-center">
+                    {signedInsightUrl ? (
+                      (signedInsightUrl.startsWith('data:image/') || /\.(jpeg|jpg|gif|png|webp|svg)(\?.*)?$/i.test(selectedInsight.data.attachmentUrl)) ? (
+                        <img
+                          src={signedInsightUrl}
+                          alt={selectedInsight.data.attachmentName}
+                          className="max-w-full rounded-lg shadow-sm object-contain"
+                        />
+                      ) : (
+                        <div className="py-8 flex flex-col items-center">
+                          <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-3 border border-blue-100">
+                            <FileText size={32} className="text-blue-600" />
+                          </div>
+                          <p className="text-xs text-slate-500 font-medium">Secure PDF/Document</p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="py-8 flex flex-col items-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-3"></div>
+                        <p className="text-xs text-slate-400 font-medium">Loading secure preview...</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
