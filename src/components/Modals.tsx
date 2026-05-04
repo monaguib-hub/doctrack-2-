@@ -465,15 +465,13 @@ export function AssignDocumentModal({
           console.error('Upload Error:', error);
           return;
         }
-        const { data: publicUrlData } = supabase.storage.from('attachments').getPublicUrl(fileName);
-
         onSave({
           title: selectedTemplate,
           type: category?.name || 'Other',
           expiryDate: noExpiry ? 'No Expiry' : expiryDate,
           hasAttachment: true,
           attachmentName: file.name,
-          attachmentUrl: publicUrlData.publicUrl
+          attachmentUrl: fileName
         });
         resetAndClose();
       } else {
@@ -635,8 +633,7 @@ export function GlobalAssignDocumentModal({
           console.error('Upload Error:', error);
           return;
         }
-        const { data: publicUrlData } = supabase.storage.from('attachments').getPublicUrl(fileName);
-        finalize({ name: file.name, url: publicUrlData.publicUrl });
+        finalize({ name: file.name, url: fileName });
       } else {
         finalize();
       }
@@ -803,13 +800,11 @@ export function EditDocumentModal({
         console.error('Upload error:', error);
         return;
       }
-      const { data: publicUrlData } = supabase.storage.from('attachments').getPublicUrl(fileName);
-
       onSave({
         expiryDate: noExpiry ? 'No Expiry' : expiryDate,
         hasAttachment: true,
         attachmentName: file.name,
-        attachmentUrl: publicUrlData.publicUrl
+        attachmentUrl: fileName
       });
       onClose();
     } else {
@@ -1301,6 +1296,41 @@ export function ViewDocumentModal({
   onClose: () => void;
   document: any;
 }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+
+  React.useEffect(() => {
+    let mounted = true;
+    async function loadUrl() {
+      if (document?.hasAttachment && document?.attachmentUrl) {
+        if (document.attachmentUrl.startsWith('http')) {
+          if (mounted) setSignedUrl(document.attachmentUrl);
+          return;
+        }
+        
+        setIsLoadingUrl(true);
+        const { data, error } = await supabase.storage.from('attachments').createSignedUrl(document.attachmentUrl, 60 * 60);
+        if (error) {
+          console.error("Error creating signed URL:", error);
+          if (mounted) setSignedUrl(null);
+        } else {
+          if (mounted) setSignedUrl(data.signedUrl);
+        }
+        if (mounted) setIsLoadingUrl(false);
+      } else {
+        if (mounted) setSignedUrl(null);
+      }
+    }
+    
+    if (isOpen) {
+      loadUrl();
+    } else {
+      setSignedUrl(null);
+    }
+    
+    return () => { mounted = false; };
+  }, [document, isOpen]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -1340,30 +1370,48 @@ export function ViewDocumentModal({
               {document?.hasAttachment ? (
                 <div className="flex flex-col items-center justify-center h-full min-h-[500px] border-2 border-dashed border-slate-200 rounded-2xl bg-white shadow-sm p-8 text-center">
                   {document.attachmentUrl ? (
-                    <div className="w-full h-full flex flex-col items-center">
-                      {(document.attachmentUrl.startsWith('data:image/') || /\.(jpeg|jpg|gif|png)(\?.*)?$/i.test(document.attachmentUrl)) ? (
-                        <img
-                          src={document.attachmentUrl}
-                          alt={document.attachmentName}
-                          className="max-w-full max-h-[500px] rounded-lg shadow-lg mb-4 object-contain"
-                        />
-                      ) : (
-                        <div className="w-24 h-24 bg-blue-50 rounded-3xl flex items-center justify-center mb-6 border border-blue-100">
-                          <FileText size={44} className="text-blue-600 shadow-sm" />
-                        </div>
-                      )}
-                      <h4 className="text-xl font-bold text-slate-800 mb-2">{document.attachmentName || 'Document Attachment'}</h4>
-                      <div className="flex space-x-4 mt-8">
-                        <a
-                          href={document.attachmentUrl}
-                          download={document.attachmentName || 'document'}
-                          className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition-all shadow-xl shadow-blue-500/20 flex items-center space-x-3 active:scale-95"
-                        >
-                          <Download size={20} />
-                          <span>Download Establishment File</span>
-                        </a>
+                    isLoadingUrl ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                        <p className="text-slate-500 font-medium">Securing connection to attachment...</p>
                       </div>
-                    </div>
+                    ) : signedUrl ? (
+                      <div className="w-full h-full flex flex-col items-center">
+                        {(signedUrl.startsWith('data:image/') || /\.(jpeg|jpg|gif|png)(\?.*)?$/i.test(document.attachmentUrl)) ? (
+                          <img
+                            src={signedUrl}
+                            alt={document.attachmentName}
+                            className="max-w-full max-h-[500px] rounded-lg shadow-lg mb-4 object-contain"
+                          />
+                        ) : (
+                          <div className="w-24 h-24 bg-blue-50 rounded-3xl flex items-center justify-center mb-6 border border-blue-100">
+                            <FileText size={44} className="text-blue-600 shadow-sm" />
+                          </div>
+                        )}
+                        <h4 className="text-xl font-bold text-slate-800 mb-2">{document.attachmentName || 'Document Attachment'}</h4>
+                        <div className="flex space-x-4 mt-8">
+                          <a
+                            href={signedUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition-all shadow-xl shadow-blue-500/20 flex items-center space-x-3 active:scale-95"
+                          >
+                            <Download size={20} />
+                            <span>Download Establishment File</span>
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="w-24 h-24 bg-red-50 rounded-3xl flex items-center justify-center mb-6 border border-red-100">
+                          <AlertTriangle size={44} className="text-red-500" />
+                        </div>
+                        <h4 className="text-xl font-bold text-slate-800 mb-2">{document.attachmentName || 'Document Attachment'}</h4>
+                        <p className="text-slate-400 max-w-sm mb-8 font-medium">
+                          Failed to generate a secure link. You may not have permission to view this file.
+                        </p>
+                      </>
+                    )
                   ) : (
                     <>
                       <div className="w-24 h-24 bg-blue-50 rounded-3xl flex items-center justify-center mb-6 border border-blue-100">
