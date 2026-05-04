@@ -1377,7 +1377,7 @@ export function ViewDocumentModal({
                       </div>
                     ) : signedUrl ? (
                       <div className="w-full h-full flex flex-col items-center">
-                        {(signedUrl.startsWith('data:image/') || /\.(jpeg|jpg|gif|png)(\?.*)?$/i.test(document.attachmentUrl)) ? (
+                        {(signedUrl && (signedUrl.startsWith('data:image/') || /\.(jpeg|jpg|gif|png|webp|svg)(\?.*)?$/i.test(document.attachmentUrl))) ? (
                           <img
                             src={signedUrl}
                             alt={document.attachmentName}
@@ -1389,15 +1389,40 @@ export function ViewDocumentModal({
                           </div>
                         )}
                         <h4 className="text-xl font-bold text-slate-800 mb-2">{document.attachmentName || 'Document Attachment'}</h4>
-                        <div className="flex space-x-4 mt-8">
-                          <a
-                            href={signedUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <div className="flex flex-wrap justify-center gap-4 mt-8">
+                          <button
+                            onClick={async () => {
+                              try {
+                                if (!signedUrl) return;
+                                const response = await fetch(signedUrl);
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = document.attachmentName || 'attachment';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                window.URL.revokeObjectURL(url);
+                              } catch (err) {
+                                console.error('Download failed:', err);
+                                if (signedUrl) window.open(signedUrl, '_blank');
+                              }
+                            }}
                             className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition-all shadow-xl shadow-blue-500/20 flex items-center space-x-3 active:scale-95"
                           >
                             <Download size={20} />
-                            <span>Download Establishment File</span>
+                            <span>Download Attachment</span>
+                          </button>
+                          
+                          <a
+                            href={signedUrl || '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-8 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-all flex items-center space-x-3 active:scale-95"
+                          >
+                            <ExternalLink size={20} />
+                            <span>Open in New Tab</span>
                           </a>
                         </div>
                       </div>
