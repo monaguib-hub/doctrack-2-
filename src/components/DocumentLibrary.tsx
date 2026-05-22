@@ -3,6 +3,7 @@ import { Search, Plus, Edit2, Trash2, ChevronDown, ChevronRight, FileText, Folde
 import { DocumentCategory, Document, Employee } from '../mockData';
 import { AddCategoryModal, AddSubDocumentModal, EditModal, DeleteConfirmationModal } from './Modals';
 import { useToast } from './Toast';
+import { supabase } from '../lib/supabase';
 
 import { getDocumentIcon } from '../utils/icons';
 
@@ -70,74 +71,206 @@ export function DocumentLibrary({
       }));
   }, [categories, effectiveSearch]);
 
-  const handleAddCategory = (name: string) => {
+  const handleAddCategory = async (name: string) => {
+    const newCatId = `cat_${Date.now()}`;
+    const { error } = await supabase
+      .from('document_categories')
+      .insert({ id: newCatId, name });
+
+    if (error) {
+      showToast(`Failed to create category: ${error.message}`, 'error');
+      return;
+    }
+
     const newCat: DocumentCategory = {
-      id: `cat_${Date.now()}`,
+      id: newCatId,
       name,
       documents: []
     };
     setCategories([...categories, newCat]);
     setExpanded(prev => ({ ...prev, [newCat.id]: true }));
     showToast(`Category "${name}" created successfully`, 'success');
-    addActivity('Mohamed Naguib', 'Created new category', name, 'create');
+    addActivity(currentUser.name, 'Created new category', name, 'create');
   };
 
-  const handleAddDocument = (name: string) => {
+  const handleAddDocument = async (name: string) => {
     if (activeCategoryId) {
+      const currentCategory = categories.find(cat => cat.id === activeCategoryId);
+      const nextSortOrder = currentCategory ? currentCategory.documents.length : 0;
+
+      const { error } = await supabase
+        .from('category_documents')
+        .insert({
+          category_id: activeCategoryId,
+          name: name,
+          sort_order: nextSortOrder
+        });
+
+      if (error) {
+        showToast(`Failed to add template: ${error.message}`, 'error');
+        return;
+      }
+
       setCategories(categories.map(cat =>
         cat.id === activeCategoryId
           ? { ...cat, documents: [...cat.documents, name] }
           : cat
       ));
       showToast(`Template "${name}" saved`, 'success');
-      addActivity('Mohamed Naguib', 'Added sub-document template', name, 'create');
+      addActivity(currentUser.name, 'Added sub-document template', name, 'create');
     }
   };
 
-  const handleEditSave = (newName: string) => {
+  const handleEditSave = async (newName: string) => {
     if (editType === 'category' && activeCategoryId) {
-      const oldName = categories.find(c => c.id === activeCategoryId)?.name;
+      const oldCategory = categories.find(c => c.id === activeCategoryId);
+      if (!oldCategory) return;
+      const oldName = oldCategory.name;
+
+      const { error } = await supabase
+        .from('document_categories')
+        .update({ name: newName })
+        .eq('id', activeCategoryId);
+
+      if (error) {
+        showToast(`Failed to rename category: ${error.message}`, 'error');
+        return;
+      }
+
+      const { error: docError } = await supabase
+        .from('documents')
+        .update({ type: newName })
+        .eq('type', oldName);
+
+      if (docError) {
+        console.error('Failed to update documents type:', docError);
+      }
+
       setCategories(categories.map(cat =>
         cat.id === activeCategoryId ? { ...cat, name: newName } : cat
       ));
+
+      setDocuments(prev => prev.map(doc =>
+        doc.type === oldName ? { ...doc, type: newName } : doc
+      ));
+
       showToast(`Category renamed to "${newName}"`, 'success');
-      addActivity('Mohamed Naguib', 'Renamed category', `${oldName} → ${newName}`, 'update');
+      addActivity(currentUser.name, 'Renamed category', `${oldName} → ${newName}`, 'update');
     } else if (editType === 'document' && activeCategoryId && activeDocName) {
+      const activeCategory = categories.find(c => c.id === activeCategoryId);
+      const categoryName = activeCategory?.name || '';
+
+      const { error } = await supabase
+        .from('category_documents')
+        .update({ name: newName })
+        .eq('category_id', activeCategoryId)
+        .eq('name', activeDocName);
+
+      if (error) {
+        showToast(`Failed to rename template: ${error.message}`, 'error');
+        return;
+      }
+
+      const { error: docError } = await supabase
+        .from('documents')
+        .update({ title: newName })
+        .eq('title', activeDocName)
+        .eq('type', categoryName);
+
+      if (docError) {
+        console.error('Failed to update documents title:', docError);
+      }
+
       setCategories(categories.map(cat =>
         cat.id === activeCategoryId
           ? { ...cat, documents: cat.documents.map(d => d === activeDocName ? newName : d) }
           : cat
       ));
-      // Update all document records that used this template name
+
       setDocuments(documents.map(doc =>
-        doc.title === activeDocName ? { ...doc, title: newName } : doc
+        (doc.title === activeDocName && doc.type === categoryName) ? { ...doc, title: newName } : doc
       ));
+
       showToast(`Template renamed to "${newName}"`, 'success');
-      addActivity('Mohamed Naguib', 'Renamed document template', `${activeDocName} → ${newName}`, 'update');
+      addActivity(currentUser.name, 'Renamed document template', `${activeDocName} → ${newName}`, 'update');
     }
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (deleteType === 'category' && activeCategoryId) {
       const categoryToDelete = categories.find(c => c.id === activeCategoryId);
       if (categoryToDelete) {
-        // Cascading delete: remove all document records that belong to any template in this category
-        setDocuments(documents.filter(doc => !categoryToDelete.documents.includes(doc.title)));
+        const { error: docError } = await supabase
+          .from('documents')
+          .delete()
+          .in('title', categoryToDelete.documents)
+          .eq('type', categoryToDelete.name);
+
+        if (docError) {
+          showToast(`Failed to delete associated documents: ${docError.message}`, 'error');
+          return;
+        }
+
+        const { error: tempError } = await supabase
+          .from('category_documents')
+          .delete()
+          .eq('category_id', activeCategoryId);
+
+        if (tempError) {
+          showToast(`Failed to delete templates: ${tempError.message}`, 'error');
+          return;
+        }
+
+        const { error: catError } = await supabase
+          .from('document_categories')
+          .delete()
+          .eq('id', activeCategoryId);
+
+        if (catError) {
+          showToast(`Failed to delete category: ${catError.message}`, 'error');
+          return;
+        }
+
+        setDocuments(documents.filter(doc => !(categoryToDelete.documents.includes(doc.title) && doc.type === categoryToDelete.name)));
         setCategories(categories.filter(cat => cat.id !== activeCategoryId));
         showToast(`Category "${categoryToDelete.name}" deleted`, 'error');
-        addActivity('Mohamed Naguib', 'Deleted category', categoryToDelete.name, 'delete');
+        addActivity(currentUser.name, 'Deleted category', categoryToDelete.name, 'delete');
       }
     } else if (deleteType === 'document' && activeCategoryId && activeDocName) {
-      // Remove the template from the category
+      const activeCategory = categories.find(c => c.id === activeCategoryId);
+      const categoryName = activeCategory?.name || '';
+
+      const { error: docError } = await supabase
+        .from('documents')
+        .delete()
+        .eq('title', activeDocName)
+        .eq('type', categoryName);
+
+      if (docError) {
+        showToast(`Failed to delete associated documents: ${docError.message}`, 'error');
+        return;
+      }
+
+      const { error: tempError } = await supabase
+        .from('category_documents')
+        .delete()
+        .eq('category_id', activeCategoryId)
+        .eq('name', activeDocName);
+
+      if (tempError) {
+        showToast(`Failed to delete template: ${tempError.message}`, 'error');
+        return;
+      }
+
       setCategories(categories.map(cat =>
         cat.id === activeCategoryId
           ? { ...cat, documents: cat.documents.filter(d => d !== activeDocName) }
           : cat
       ));
-      // Remove all document records of this type
-      setDocuments(documents.filter(doc => doc.title !== activeDocName));
+
+      setDocuments(documents.filter(doc => !(doc.title === activeDocName && doc.type === categoryName)));
       showToast(`Template "${activeDocName}" deleted`, 'error');
-      addActivity('Mohamed Naguib', 'Deleted document template', activeDocName, 'delete');
+      addActivity(currentUser.name, 'Deleted document template', activeDocName, 'delete');
     }
     setIsDeleteModalOpen(false);
   };
